@@ -1,0 +1,67 @@
+name: Build Test Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+
+  build:
+    strategy:
+      matrix:        
+        configuration: [Release]
+#        configuration: [Debug, Release]
+    name: Build Windows    
+    runs-on: windows-2019  
+    env:
+      SOLUTION_NAME: Test.sln
+      TAG_NAME: "test"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.1
+        
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v1.0.5
+        
+      #- name: Restore Packages
+      #  run: nuget restore Test.sln
+
+      - name: Build solution
+        run: msbuild Test.sln -t:rebuild -property:Configuration=Release
+
+      # Restore the application to populate the obj folder with RuntimeIdentifiers
+      - name: Restore the application
+        run: msbuild $env:SOLUTION_NAME /t:Restore /p:Configuration=$env:Configuration
+        env:
+          Configuration: ${{ matrix.configuration }}
+     
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+
+      - name: ReName_exe
+        shell: bash
+        run: | 
+          pushd ./bin/Release
+          POSTFIX=${{ steps.date.outputs.date }}
+          EXT=".exe"
+          for file in ./**$EXT; do          	
+            filename="${file%.*}"
+            temp=$filename-$POSTFIX
+            mv $file ${temp}$EXT
+          done
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v1
+        with:
+          prerelease: true
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            ./bin/Release/*.exe
